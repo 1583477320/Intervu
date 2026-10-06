@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interview · 多智能体协作面试系统</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <button id="btn-sidebar-toggle" class="icon-btn menu-btn" title="面试会话列表" aria-label="面试会话列表">☰</button>
+      <span class="logo">面</span>
+      <div>
+        <h1>Interview 面试系统</h1>
+        <p class="sub">JD 进 · 面试官出 · 聊完给报告</p>
+      </div>
+    </div>
+    <div class="badges">
+      <span id="badge-model" class="badge">…</span>
+      <span id="badge-unconfigured" class="badge badge-warn hidden">⚠ 未配置 LLM</span>
+      <button id="btn-settings" class="icon-btn" title="LLM 模型设置">⚙ 设置</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ 左侧：会话管理栏 ============ -->
+    <aside class="sidebar">
+      <div class="side-head">
+        <h2 class="side-title">面试会话</h2>
+        <button id="btn-new-session" class="btn btn-primary btn-sm">＋ 新面试</button>
+      </div>
+      <input id="side-search" class="side-search" type="search" placeholder="搜索岗位 / 公司…" autocomplete="off" />
+      <div id="side-list" class="side-list">
+        <p class="side-empty">加载中…</p>
+      </div>
+    </aside>
+
+    <div class="container">
+    <!-- ============ 第一步：粘贴 JD ============ -->
+    <section id="screen-setup" class="screen">
+      <div class="card">
+        <h2>发起一场面试</h2>
+        <p class="muted">粘贴职位描述（JD），系统将解析技能要求、检索公司背景并生成专属面试官，随后进入多轮对话面试。</p>
+      <p id="setup-need-key" class="error hidden">⚠ 尚未配置 LLM：请先点击右上角「⚙ 设置」填写 API Key 后再开始面试。</p>
+        <textarea id="jd-input" placeholder="在这里粘贴职位描述……（可点击下方“填入示例 JD”体验）" rows="10"></textarea>
+        <div class="row gap">
+          <button id="btn-sample" class="btn btn-ghost">填入示例 JD</button>
+          <button id="btn-start" class="btn btn-primary" disabled>生成面试官并开始</button>
+        </div>
+        <p id="setup-error" class="error hidden"></p>
+      </div>
+    </section>
+
+    <!-- ============ 第二步：对话面试 ============ -->
+    <section id="screen-chat" class="screen hidden">
+      <div id="interviewer-card" class="card interviewer-card">
+        <div class="avatar avatar-lg">面</div>
+        <div class="grow">
+          <h2 id="iv-role">…</h2>
+          <p class="muted" id="iv-company"></p>
+          <div class="chips" id="iv-focus"></div>
+        </div>
+        <div class="difficulty-box">
+          <p class="muted small">当前难度</p>
+          <div class="meter" id="diff-meter">
+            <div class="seg seg1" data-tier="1">L1 概念</div>
+            <div class="seg seg2" data-tier="2">L2 应用</div>
+            <div class="seg seg3" data-tier="3">L3 深挖</div>
+          </div>
+          <p id="diff-label" class="diff-label"></p>
+        </div>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div id="typing" class="typing hidden">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        面试官正在思考…
+      </div>
+
+      <!-- 生成面试官后，先上传简历；面试官将基于简历提出第一个问题 -->
+      <div id="resume-panel" class="card resume-panel hidden">
+        <h2 class="resume-title">请先上传你的简历</h2>
+        <p class="muted small">支持 txt / md / pdf / docx 格式（≤ 10MB）。上传后，面试官将基于简历内容提出第一个问题。</p>
+        <label id="resume-drop" class="resume-drop">
+          <input type="file" id="resume-file" accept=".txt,.md,.markdown,.pdf,.docx" />
+          <span class="resume-drop-icon">📄</span>
+          <span id="resume-file-hint">点击选择简历文件（或将文件拖拽到此处）</span>
+          <span id="resume-file-name" class="resume-file-name hidden"></span>
+        </label>
+        <div class="row gap">
+          <button type="button" id="btn-resume-submit" class="btn btn-primary" disabled>提交简历</button>
+        </div>
+        <p id="resume-error" class="error hidden"></p>
+      </div>
+
+      <form id="answer-form" class="composer">
+        <textarea id="answer-input" rows="2" placeholder="输入你的回答，回车发送（Shift+Enter 换行）…"></textarea>
+        <div class="composer-actions">
+          <button type="button" id="btn-end" class="btn btn-danger">结束面试</button>
+          <button type="submit" id="btn-send" class="btn btn-primary">发送</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ============ 第三步：评估报告 ============ -->
+    <section id="screen-report" class="screen hidden">
+      <div class="report-actions">
+        <button id="btn-report-reset" class="btn btn-primary">发起新面试</button>
+      </div>
+      <article id="report-content" class="card report"></article>
+    </section>
+    </div>
+  </main>
+
+  <div id="side-scrim" class="side-scrim"></div>
+
+  <!-- ============ 确认/输入对话框（重命名 · 删除 · 结束面试） ============ -->
+  <div id="dlg-mask" class="modal-mask hidden">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+      <div class="modal-head">
+        <h2 id="dlg-title"></h2>
+        <button id="dlg-close" class="icon-btn icon-dark" title="关闭">✕</button>
+      </div>
+      <div id="dlg-body" class="dlg-body"></div>
+      <div class="modal-actions">
+        <span class="grow"></span>
+        <button id="dlg-cancel" class="btn btn-ghost">取消</button>
+        <button id="dlg-ok" class="btn btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ============ LLM 设置弹窗 ============ -->
+  <div id="llm-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>模型设置</h2>
+        <button id="btn-llm-close" class="icon-btn icon-dark" title="关闭">✕</button>
+      </div>
+      <p class="muted small">面试必须调用真实模型：配置任意 OpenAI 兼容接口（OpenAI / DeepSeek / Moonshot / 本地网关…），保存后即时生效，无需重启服务。API Key 仅保存在本机，不会回显。</p>
+
+      <div class="field">
+        <label for="cfg-key">API Key <span class="required">*</span></label>
+        <div class="key-row">
+          <input id="cfg-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+          <button type="button" id="cfg-key-toggle" class="btn btn-ghost btn-sm">显示</button>
+        </div>
+        <p id="cfg-key-hint" class="hint"></p>
+      </div>
+
+      <label class="check-row" id="cfg-clear-row">
+        <input type="checkbox" id="cfg-clear" />
+        <span>清除已配置的 Key（回到未配置状态）</span>
+      </label>
+
+      <div class="field">
+        <label for="cfg-base">Base URL</label>
+        <input id="cfg-base" type="text" spellcheck="false" placeholder="https://api.openai.com/v1" />
+        <div class="presets">
+          <span class="preset-label">快捷填入</span>
+          <button type="button" data-base="https://api.openai.com/v1" data-model="gpt-4o-mini">OpenAI</button>
+          <button type="button" data-base="https://api.deepseek.com/v1" data-model="deepseek-chat">DeepSeek</button>
+          <button type="button" data-base="https://api.moonshot.cn/v1" data-model="moonshot-v1-8k">Moonshot</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="cfg-model">模型名称</label>
+        <input id="cfg-model" type="text" list="model-suggest" spellcheck="false" placeholder="gpt-4o-mini" />
+        <datalist id="model-suggest">
+          <option value="gpt-4o-mini"></option>
+          <option value="gpt-4o"></option>
+          <option value="deepseek-chat"></option>
+          <option value="deepseek-reasoner"></option>
+          <option value="moonshot-v1-8k"></option>
+          <option value="moonshot-v1-32k"></option>
+        </datalist>
+        <div class="presets model-refresh">
+          <span class="preset-label">没有你要的模型？</span>
+          <button type="button" id="btn-models-refresh">🔄 拉取当前账号可用模型</button>
+        </div>
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" id="cfg-persist" checked />
+        <span>写入项目 <code>.env</code> 文件（明文保存，下次启动仍生效）</span>
+      </label>
+
+      <p id="cfg-status" class="status"></p>
+      <div class="modal-actions">
+        <span class="grow"></span>
+        <button id="btn-llm-test" class="btn btn-ghost">测试连接</button>
+        <button id="btn-llm-save" class="btn btn-primary">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
